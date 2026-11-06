@@ -16,6 +16,7 @@ source "${SCRIPT_DIR}/config.sh"
 source "${REPO_ROOT}/scripts/cuda_helper.sh"
 
 ALL_CUDA_ARCHS=false
+CUDA_VERSION=""
 NO_CACHE=false
 PLAIN_OUTPUT=false
 BUILD_WITH_VELOX_ENABLE_CUDF="ON"
@@ -38,6 +39,8 @@ Builds the Velox adapters Docker image using docker compose, with options to con
 
 Options:
   --all-cuda-archs            Build for all supported CUDA architectures (default: false).
+  --cuda-version VERSION      CUDA version to build with (major.minor, like 13.4). Must match the CUDA
+                              version installed in the dependencies image (default: the image build's default, 12.9).
   --no-cache                  Build without using Docker cache (default: false).
   --plain                     Use plain output for Docker build logs (default: false).
   --log [LOGFILE]             Capture build process to log file, enables --plain, by default LOGFILE='./build_velox.log' (default: false).
@@ -55,6 +58,7 @@ Options:
 Examples:
   $(basename "$0") --all-cuda-archs --no-cache
   $(basename "$0") --plain
+  $(basename "$0") --cuda-version 13.4  # Build with CUDA 13.4 (needs a CUDA 13.4 dependencies image)
   $(basename "$0") --cpu
   $(basename "$0") --benchmarks true   # Build with benchmarks/nsys (default)
   $(basename "$0") --benchmarks false  # Build without benchmarks/nsys
@@ -81,6 +85,14 @@ parse_args() {
       --all-cuda-archs)
         ALL_CUDA_ARCHS=true
         shift
+        ;;
+      --cuda-version)
+        if [[ -z "${2:-}" || "${2}" =~ ^- ]]; then
+          echo "Error: --cuda-version requires a value"
+          exit 1
+        fi
+        CUDA_VERSION="$2"
+        shift 2
         ;;
       --no-cache)
         NO_CACHE=true
@@ -266,6 +278,9 @@ if [[ "$ALL_CUDA_ARCHS" == true ]]; then
 else
   # Only detect native architecture if not building for all architectures
   set_cuda_docker_build_opt
+fi
+if [[ -n "${CUDA_VERSION}" ]]; then
+  DOCKER_BUILD_OPTS+=(--build-arg CUDA_VERSION="${CUDA_VERSION}")
 fi
 DOCKER_BUILD_OPTS+=(--build-arg BUILD_WITH_VELOX_ENABLE_CUDF="${BUILD_WITH_VELOX_ENABLE_CUDF}")
 DOCKER_BUILD_OPTS+=(--build-arg NUM_THREADS="${NUM_THREADS}")
