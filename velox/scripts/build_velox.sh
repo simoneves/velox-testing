@@ -17,6 +17,7 @@ source "${REPO_ROOT}/scripts/cuda_helper.sh"
 
 ALL_CUDA_ARCHS=false
 CUDA_VERSION=""
+WITH_CUGEO=false
 NO_CACHE=false
 PLAIN_OUTPUT=false
 BUILD_WITH_VELOX_ENABLE_CUDF="ON"
@@ -39,6 +40,8 @@ Builds the Velox adapters Docker image using docker compose, with options to con
 
 Options:
   --all-cuda-archs            Build for all supported CUDA architectures (default: false).
+  --with-cugeo                Also build cuGeo's Velox adapter from the sibling cuGeo clone (../cugeo), as a Velox
+                              cuDF extension (needs --gpu and a Velox with VELOX_CUDF_EXTENSIONS) (default: false).
   --cuda-version VERSION      CUDA version to build with (major.minor, like 13.4). Must match the CUDA
                               version installed in the dependencies image (default: the image build's default, 12.9).
   --no-cache                  Build without using Docker cache (default: false).
@@ -59,6 +62,7 @@ Examples:
   $(basename "$0") --all-cuda-archs --no-cache
   $(basename "$0") --plain
   $(basename "$0") --cuda-version 13.4  # Build with CUDA 13.4 (needs a CUDA 13.4 dependencies image)
+  $(basename "$0") --gpu --cuda-version 13.4 --with-cugeo  # Also build cuGeo's Velox adapter
   $(basename "$0") --cpu
   $(basename "$0") --benchmarks true   # Build with benchmarks/nsys (default)
   $(basename "$0") --benchmarks false  # Build without benchmarks/nsys
@@ -84,6 +88,10 @@ parse_args() {
     case "$1" in
       --all-cuda-archs)
         ALL_CUDA_ARCHS=true
+        shift
+        ;;
+      --with-cugeo)
+        WITH_CUGEO=true
         shift
         ;;
       --cuda-version)
@@ -322,6 +330,27 @@ if [[ "$ENABLE_SCCACHE" == true ]]; then
 else
   DOCKER_BUILD_OPTS+=(--build-arg ENABLE_SCCACHE="OFF")
   DOCKER_BUILD_OPTS+=(--build-arg SCCACHE_NO_DIST_COMPILE=1)
+fi
+
+if [[ "$WITH_CUGEO" == true ]]; then
+  if [[ "$BUILD_WITH_VELOX_ENABLE_CUDF" != "ON" ]]; then
+    echo "ERROR: --with-cugeo needs a GPU build (--gpu)." >&2
+    exit 1
+  fi
+  CUGEO_DIR="${REPO_ROOT}/../cugeo"
+  if ! git -C "${CUGEO_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "ERROR: --with-cugeo needs a cuGeo clone at ${CUGEO_DIR}." >&2
+    exit 1
+  fi
+  # Stage cugeo-geometry's tracked and untracked, non-ignored files: the clone's
+  # build trees and virtual environments would otherwise be sent to Docker.
+  CUGEO_CONTEXT="$(mktemp -d)"
+  trap 'rm -rf "${CUGEO_CONTEXT}"' EXIT
+  git -C "${CUGEO_DIR}" ls-files -z --cached --others --exclude-standard -- cugeo-geometry |
+    tar -C "${CUGEO_DIR}" --null --ignore-failed-read -T - -cf - | tar -C "${CUGEO_CONTEXT}" -xf -
+  export CUGEO_CONTEXT
+  echo "Building cuGeo's Velox adapter from ${CUGEO_DIR} ($(git -C "${CUGEO_DIR}" rev-parse --short HEAD), staged in ${CUGEO_CONTEXT})"
+  DOCKER_BUILD_OPTS+=(--build-arg WITH_CUGEO=ON)
 fi
 
 SELECTED_COMPOSE_FILE=$(compose_file)

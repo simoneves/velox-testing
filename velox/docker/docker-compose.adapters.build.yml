@@ -5,6 +5,10 @@ services:
     build:
       context: ../../..
       dockerfile: velox-testing/velox/docker/adapters_build.dockerfile
+      # build_velox.sh --with-cugeo points CUGEO_CONTEXT at a staged copy of the
+      # cuGeo sources; otherwise this small directory stands in, unused.
+      additional_contexts:
+        cugeo: ${CUGEO_CONTEXT:-.}
     runtime: ${DOCKER_RUNTIME:-nvidia}
     volumes:
       - ../../../velox:/workspace/velox
