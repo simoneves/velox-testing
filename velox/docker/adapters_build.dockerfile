@@ -54,6 +54,7 @@ ARG CUDA_VERSION=12.9
 ARG CUDA_ARCHITECTURES=70
 ARG BUILD_WITH_VELOX_ENABLE_CUDF=ON
 ARG BUILD_WITH_VELOX_ENABLE_WAVE=OFF
+ARG WITH_CUGEO=OFF
 ARG TREAT_WARNINGS_AS_ERRORS=1
 ARG BUILD_BASE_DIR=/opt/velox-build
 ARG BUILD_TYPE=release
@@ -100,7 +101,8 @@ ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/cudf-build:\
 ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/rmm-build:\
 ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/rapids_logger-build:\
 ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/kvikio-build:\
-${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/nvcomp_proprietary_binary-src/lib64" \
+${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/nvcomp_proprietary_binary-src/lib64:\
+${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/cugeo-build/spatial-cuda" \
     ENABLE_SCCACHE="${ENABLE_SCCACHE}" \
     SCCACHE_VERSION="${SCCACHE_VERSION}" \
     SCCACHE_SERVER_LOG="${SCCACHE_SERVER_LOG}" \
@@ -139,6 +141,9 @@ RUN --mount=from=ninja,source=/usr/bin/ninja,target=/tmp/ninja \
 RUN \
     # Mount velox source dir
     --mount=type=bind,source=velox,target=/workspace/velox,ro \
+    # Mount the cuGeo sources (used when WITH_CUGEO=ON) and cargo's registry cache
+    --mount=type=bind,from=cugeo,target=/workspace/cugeo,ro \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     # Mount sccache preprocessor and toolchain caches
     --mount=type=cache,target=/root/.cache/sccache/preprocessor \
     --mount=type=cache,target=/root/.cache/sccache-dist-client \
@@ -175,6 +180,11 @@ if test -n "${MAX_LINK_JOBS:-}"; then
   MAKEFLAGS="${MAKEFLAGS} MAX_LINK_JOBS=${MAX_LINK_JOBS}";
 fi
 
+# Build cuGeo's Velox adapter as a Velox cuDF extension
+if [ "$WITH_CUGEO" = "ON" ]; then
+  EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS} -DVELOX_CUDF_EXTENSIONS=cugeo=/workspace/cugeo/cugeo-geometry/backends/cugeo-velox";
+fi
+
 # Build Velox
 make cmake BUILD_DIR="${BUILD_TYPE}" BUILD_TYPE="${BUILD_TYPE}" EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS}" BUILD_BASE_DIR="${BUILD_BASE_DIR}";
 
@@ -191,3 +201,5 @@ EOF
 
 # Copy velox source into the image so tests can find it at /workspace/velox
 COPY velox /workspace/velox
+# Copy the cuGeo sources the build used, for the adapter's tests
+COPY --from=cugeo . /workspace/cugeo
