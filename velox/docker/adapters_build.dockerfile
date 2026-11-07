@@ -55,6 +55,9 @@ ARG CUDA_ARCHITECTURES=70
 ARG BUILD_WITH_VELOX_ENABLE_CUDF=ON
 ARG BUILD_WITH_VELOX_ENABLE_WAVE=OFF
 ARG WITH_CUGEO=OFF
+# GitLab's SSH host key, for cloning cuGeo while it is private (see build_velox.sh).
+# Remove when cuGeo is public.
+ARG CUGEO_KNOWN_HOSTS=""
 ARG TREAT_WARNINGS_AS_ERRORS=1
 ARG BUILD_BASE_DIR=/opt/velox-build
 ARG BUILD_TYPE=release
@@ -74,6 +77,7 @@ ENV ARM_BUILD_TARGET="generic" \
     VELOX_DEPENDENCY_SOURCE=SYSTEM \
     GTest_SOURCE=BUNDLED \
     cudf_SOURCE=BUNDLED \
+    cugeo_SOURCE=BUNDLED \
     faiss_SOURCE=BUNDLED \
     CUDA_VERSION=${CUDA_VERSION} \
     TREAT_WARNINGS_AS_ERRORS=${TREAT_WARNINGS_AS_ERRORS} \
@@ -141,9 +145,11 @@ RUN --mount=from=ninja,source=/usr/bin/ninja,target=/tmp/ninja \
 RUN \
     # Mount velox source dir
     --mount=type=bind,source=velox,target=/workspace/velox,ro \
-    # Mount the cuGeo sources (used when WITH_CUGEO=ON) and cargo's registry cache
-    --mount=type=bind,from=cugeo,target=/workspace/cugeo,ro \
+    # Mount cargo's registry cache, for cuGeo's Rust crates (WITH_CUGEO=ON)
     --mount=type=cache,target=/usr/local/cargo/registry \
+    # Mount the SSH agent forwarded by build_velox.sh --with-cugeo, for cloning
+    # cuGeo while it is private. Remove when cuGeo is public.
+    --mount=type=ssh \
     # Mount sccache preprocessor and toolchain caches
     --mount=type=cache,target=/root/.cache/sccache/preprocessor \
     --mount=type=cache,target=/root/.cache/sccache-dist-client \
@@ -180,9 +186,14 @@ if test -n "${MAX_LINK_JOBS:-}"; then
   MAKEFLAGS="${MAKEFLAGS} MAX_LINK_JOBS=${MAX_LINK_JOBS}";
 fi
 
-# Build cuGeo's Velox adapter as a Velox cuDF extension
+# Build cuGeo's Velox adapter; Velox fetches cuGeo into _deps/cugeo-src
 if [ "$WITH_CUGEO" = "ON" ]; then
-  EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS} -DVELOX_CUDF_EXTENSIONS=cugeo=/workspace/cugeo/cugeo-geometry/backends/cugeo-velox";
+  EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS} -DVELOX_ENABLE_CUGEO=ON";
+  # BEGIN cuGeo SSH access: clone with the forwarded agent, checking GitLab's
+  # host key. Remove this block when cuGeo is public.
+  printf '%s\n' "${CUGEO_KNOWN_HOSTS}" > /tmp/cugeo_known_hosts;
+  export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/tmp/cugeo_known_hosts";
+  # END cuGeo SSH access.
 fi
 
 # Build Velox
@@ -201,5 +212,3 @@ EOF
 
 # Copy velox source into the image so tests can find it at /workspace/velox
 COPY velox /workspace/velox
-# Copy the cuGeo sources the build used, for the adapter's tests
-COPY --from=cugeo . /workspace/cugeo
