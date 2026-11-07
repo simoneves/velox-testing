@@ -40,8 +40,9 @@ Builds the Velox adapters Docker image using docker compose, with options to con
 
 Options:
   --all-cuda-archs            Build for all supported CUDA architectures (default: false).
-  --with-cugeo                Also build cuGeo's Velox adapter from the sibling cuGeo clone (../cugeo), as a Velox
-                              cuDF extension (needs --gpu and a Velox with VELOX_CUDF_EXTENSIONS) (default: false).
+  --with-cugeo                Also build cuGeo's Velox adapter, which Velox fetches at the commit pinned in its
+                              CMake/resolve_dependency_modules/cugeo.cmake (needs --gpu, a Velox with
+                              VELOX_ENABLE_CUGEO, and for now an SSH agent with access to cuGeo's GitLab) (default: false).
   --cuda-version VERSION      CUDA version to build with (major.minor, like 13.4). Must match the CUDA
                               version installed in the dependencies image (default: the image build's default, 12.9).
   --no-cache                  Build without using Docker cache (default: false).
@@ -337,20 +338,22 @@ if [[ "$WITH_CUGEO" == true ]]; then
     echo "ERROR: --with-cugeo needs a GPU build (--gpu)." >&2
     exit 1
   fi
-  CUGEO_DIR="${REPO_ROOT}/../cugeo"
-  if ! git -C "${CUGEO_DIR}" rev-parse --git-dir >/dev/null 2>&1; then
-    echo "ERROR: --with-cugeo needs a cuGeo clone at ${CUGEO_DIR}." >&2
+  DOCKER_BUILD_OPTS+=(--build-arg WITH_CUGEO=ON)
+  # BEGIN cuGeo SSH access. cuGeo is private on GitLab for now, so Velox clones it
+  # over SSH: forward this shell's SSH agent into the build and pin GitLab's host
+  # key from this user's known_hosts. Remove this block when cuGeo is public.
+  CUGEO_SSH_HOST="[gitlab-master.nvidia.com]:12051"
+  if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
+    echo "ERROR: --with-cugeo needs an SSH agent (SSH_AUTH_SOCK) with a key for cuGeo's GitLab." >&2
     exit 1
   fi
-  # Stage cugeo-geometry's tracked and untracked, non-ignored files: the clone's
-  # build trees and virtual environments would otherwise be sent to Docker.
-  CUGEO_CONTEXT="$(mktemp -d)"
-  trap 'rm -rf "${CUGEO_CONTEXT}"' EXIT
-  git -C "${CUGEO_DIR}" ls-files -z --cached --others --exclude-standard -- cugeo-geometry |
-    tar -C "${CUGEO_DIR}" --null --ignore-failed-read -T - -cf - | tar -C "${CUGEO_CONTEXT}" -xf -
-  export CUGEO_CONTEXT
-  echo "Building cuGeo's Velox adapter from ${CUGEO_DIR} ($(git -C "${CUGEO_DIR}" rev-parse --short HEAD), staged in ${CUGEO_CONTEXT})"
-  DOCKER_BUILD_OPTS+=(--build-arg WITH_CUGEO=ON)
+  CUGEO_KNOWN_HOSTS="$(ssh-keygen -F "${CUGEO_SSH_HOST}" 2>/dev/null | grep -v '^#' || true)"
+  if [[ -z "${CUGEO_KNOWN_HOSTS}" ]]; then
+    echo "ERROR: ${CUGEO_SSH_HOST} is not in ~/.ssh/known_hosts. Connect to it once with ssh to record its host key." >&2
+    exit 1
+  fi
+  DOCKER_BUILD_OPTS+=(--ssh default --build-arg CUGEO_KNOWN_HOSTS="${CUGEO_KNOWN_HOSTS}")
+  # END cuGeo SSH access.
 fi
 
 SELECTED_COMPOSE_FILE=$(compose_file)
