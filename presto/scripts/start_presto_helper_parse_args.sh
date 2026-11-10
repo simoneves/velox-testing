@@ -29,6 +29,10 @@ OPTIONS:
                          "relwithdebinfo", or "debug". Values are case insensitive. The default value
                          is "release".
     --all-cuda-archs     Build for all supported CUDA architectures (GPU only) (default: false).
+    --with-cugeo         Build the GPU worker with cuGeo's Velox adapter, which Velox fetches at the commit
+                         pinned in its CMake/resolve_dependency_modules/cugeo.cmake (GPU only; needs a Velox
+                         with VELOX_ENABLE_CUGEO, and for now an SSH agent with access to cuGeo's GitLab).
+                         Only affects a build: use it with "-b worker" (default: false).
     -p, --profile        Launch the Presto server with profiling enabled.
     --profile-args       Arguments to pass to the profiler when it launches the Presto server.
                          This will override the default arguments.
@@ -65,6 +69,7 @@ EOF
 NUM_THREADS=$(($(nproc) / 2))
 BUILD_TYPE=release
 ALL_CUDA_ARCHS=false
+WITH_CUGEO=false
 export SINGLE_CONTAINER=false
 export OVERWRITE_CONFIG=false
 SKIP_GENERATE_CONFIG=false
@@ -171,6 +176,10 @@ parse_args() {
         ;;
       --all-cuda-archs)
         ALL_CUDA_ARCHS=true
+        shift
+        ;;
+      --with-cugeo)
+        WITH_CUGEO=true
         shift
         ;;
       --overwrite-config)
