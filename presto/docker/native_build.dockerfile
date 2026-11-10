@@ -18,6 +18,12 @@ ARG EXTRA_CMAKE_FLAGS="\
     -DVELOX_BUILD_TESTING=OFF \
     -DPRESTO_STATS_REPORTER_TYPE=PROMETHEUS"
 ARG CUDA_ARCHITECTURES="75;80;86;90;100;120"
+# Build cuGeo's Velox adapter; Velox fetches cuGeo into _deps/cugeo-src
+# (start_*_presto.sh --with-cugeo).
+ARG WITH_CUGEO=OFF
+# GitLab's SSH host key, for cloning cuGeo while it is private (see
+# start_presto_helper.sh). Remove when cuGeo is public.
+ARG CUGEO_KNOWN_HOSTS=""
 ARG TARGETARCH
 ARG ENABLE_SCCACHE=OFF
 ARG SCCACHE_SERVER_LOG="sccache=info"
@@ -69,6 +75,11 @@ RUN \
     --mount=type=secret,id=github_token,env=SCCACHE_DIST_AUTH_TOKEN \
     --mount=type=secret,id=aws_credentials,target=/root/.aws/credentials \
     --mount=type=bind,source=velox-testing/scripts/sccache/sccache_setup.sh,target=/sccache_setup.sh,ro \
+    # Mount cargo's registry cache, for cuGeo's Rust crates (WITH_CUGEO=ON)
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    # Mount the SSH agent forwarded by --with-cugeo, for cloning cuGeo while it
+    # is private. Remove when cuGeo is public.
+    --mount=type=ssh \
 <<EOF
 set -euxo pipefail;
 
@@ -94,6 +105,21 @@ if [ "$ENABLE_SCCACHE" = "ON" ]; then
   export NVCC_APPEND_FLAGS="${NVCC_APPEND_FLAGS:+$NVCC_APPEND_FLAGS }-t=100";
 fi
 
+# Build cuGeo's Velox adapter and its Presto plugin; Velox fetches cuGeo into
+# _deps/cugeo-src. The build tree is a cache mount, so VELOX_ENABLE_CUGEO is
+# always set, to override a previous build's.
+if [ "$WITH_CUGEO" != "ON" ]; then
+  EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS} -DVELOX_ENABLE_CUGEO=OFF";
+else
+  EXTRA_CMAKE_FLAGS="${EXTRA_CMAKE_FLAGS} -DVELOX_ENABLE_CUGEO=ON";
+  export cugeo_SOURCE=BUNDLED;
+  # BEGIN cuGeo SSH access: clone with the forwarded agent, checking GitLab's
+  # host key. Remove this block when cuGeo is public.
+  printf '%s\n' "${CUGEO_KNOWN_HOSTS}" > /tmp/cugeo_known_hosts;
+  export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/tmp/cugeo_known_hosts";
+  # END cuGeo SSH access.
+fi
+
 make --directory="/presto_native_staging/presto" cmake-and-build BUILD_TYPE=${BUILD_TYPE} BUILD_DIR="" BUILD_BASE_DIR=${BUILD_BASE_DIR};
 
 if [ "$ENABLE_SCCACHE" = "ON" ]; then
@@ -104,11 +130,28 @@ fi
 !(LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib ldd ${BUILD_BASE_DIR}/presto_cpp/main/presto_server | grep "not found" | grep -v -E "libcuda\.so|libnvidia");
 LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/lib ldd ${BUILD_BASE_DIR}/presto_cpp/main/presto_server | awk 'NF == 4 && $3 != "not" && $1 !~ /libcuda\.so|libnvidia/ { system("cp " $3 " /runtime-libraries") }';
 cp ${BUILD_BASE_DIR}/presto_cpp/main/presto_server /usr/bin;
+
+# Report what cuGeo built (the build tree is a cache mount, not in the image),
+# and keep the plugin and the library it loads.
+mkdir -p /runtime-plugin;
+if [ "$WITH_CUGEO" = "ON" ]; then
+  git -C ${BUILD_BASE_DIR}/_deps/cugeo-src rev-parse HEAD;
+  CUGEO_BUILD=${BUILD_BASE_DIR}/_deps/cugeo-build;
+  ls -l ${CUGEO_BUILD}/libcugeo_velox_gpu.a ${CUGEO_BUILD}/spatial-cuda/libspatial_cuda.so ${CUGEO_BUILD}/cugeo-presto/libcugeo_presto.so;
+  cp ${CUGEO_BUILD}/spatial-cuda/libspatial_cuda.so /runtime-libraries;
+  cp ${CUGEO_BUILD}/cugeo-presto/libcugeo_presto.so /runtime-plugin;
+fi
 EOF
 
 RUN mkdir /usr/lib64/presto-native-libs && \
     cp /runtime-libraries/* /usr/lib64/presto-native-libs/ && \
-    echo "/usr/lib64/presto-native-libs" > /etc/ld.so.conf.d/presto_native.conf
+    echo "/usr/lib64/presto-native-libs" > /etc/ld.so.conf.d/presto_native.conf && \
+    ldconfig
+
+# The worker's default plugin directory is "plugin" under its working
+# directory, "/". It loads every shared library there as a plugin, so only
+# plugins go in it (--with-cugeo: libcugeo_presto.so).
+RUN if [ -n "$(ls -A /runtime-plugin)" ]; then mkdir -p /plugin && cp /runtime-plugin/* /plugin/; fi
 
 COPY velox-testing/presto/docker/launch_presto_servers.sh velox-testing/presto/docker/presto_profiling_wrapper.sh /opt
 

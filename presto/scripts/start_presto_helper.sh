@@ -164,6 +164,39 @@ if [[ "$ALL_CUDA_ARCHS" == "true" && "$VARIANT_TYPE" != "gpu" ]]; then
   exit 1
 fi
 
+CUGEO_BUILD_ARGS=()
+if [[ "$WITH_CUGEO" == "true" ]]; then
+  if [[ "$VARIANT_TYPE" != "gpu" ]]; then
+    echo "ERROR: --with-cugeo is only supported for Presto GPU."
+    exit 1
+  fi
+  # cuGeo builds its kernels for the same architectures as the rest of the
+  # worker, and qualifies each one separately.
+  if [[ "$ALL_CUDA_ARCHS" == "true" ]]; then
+    echo "ERROR: --with-cugeo can't be combined with --all-cuda-archs."
+    exit 1
+  fi
+  if [[ ! ${BUILD_TARGET_ARG[@]} =~ $GPU_WORKER_SERVICE ]]; then
+    echo "WARNING: --with-cugeo only affects a build, and the GPU worker image is not being built. Add '-b worker' to rebuild it with cuGeo."
+  fi
+  CUGEO_BUILD_ARGS+=(--build-arg WITH_CUGEO=ON)
+  # BEGIN cuGeo SSH access. cuGeo is private on GitLab for now, so Velox clones it
+  # over SSH: forward this shell's SSH agent into the build and pin GitLab's host
+  # key from this user's known_hosts. Remove this block when cuGeo is public.
+  CUGEO_SSH_HOST="[gitlab-master.nvidia.com]:12051"
+  if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
+    echo "ERROR: --with-cugeo needs an SSH agent (SSH_AUTH_SOCK) with a key for cuGeo's GitLab."
+    exit 1
+  fi
+  CUGEO_KNOWN_HOSTS="$(ssh-keygen -F "${CUGEO_SSH_HOST}" 2>/dev/null | grep -v '^#' || true)"
+  if [[ -z "${CUGEO_KNOWN_HOSTS}" ]]; then
+    echo "ERROR: ${CUGEO_SSH_HOST} is not in ~/.ssh/known_hosts. Connect to it once with ssh to record its host key."
+    exit 1
+  fi
+  CUGEO_BUILD_ARGS+=(--ssh default --build-arg CUGEO_KNOWN_HOSTS="${CUGEO_KNOWN_HOSTS}")
+  # END cuGeo SSH access.
+fi
+
 DOCKER_COMPOSE_FILE_PATH="${SCRIPT_DIR}/../docker/docker-compose.$DOCKER_COMPOSE_FILE.yml"
 # For GPU, the docker-compose file is a Jinja template. Render it before any docker compose operations.
 if [[ "$VARIANT_TYPE" == "gpu" ]]; then
@@ -238,6 +271,7 @@ if (( ${#BUILD_TARGET_ARG[@]} )); then
   --build-arg NUM_THREADS=$NUM_THREADS --build-arg BUILD_TYPE=$BUILD_TYPE \
   --build-arg CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES \
   "${SCCACHE_BUILD_ARGS[@]}" \
+  "${CUGEO_BUILD_ARGS[@]}" \
   ${BUILD_TARGET_ARG[@]}
 
   # Coordinator and java-worker use external Dockerfiles (presto repo) without ARG+LABEL
