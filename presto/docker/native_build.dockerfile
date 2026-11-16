@@ -118,6 +118,10 @@ else
   printf '%s\n' "${CUGEO_KNOWN_HOSTS}" > /tmp/cugeo_known_hosts;
   export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/tmp/cugeo_known_hosts";
   # END cuGeo SSH access.
+  # cuGeo's ABI generator loads libclang 21, which the dependency image unpacks
+  # beside the system's newer clang, with its resource headers.
+  export LIBCLANG_PATH=/opt/libclang-21/usr/lib64/libclang.so.21.1;
+  export BINDGEN_EXTRA_CLANG_ARGS="-resource-dir=/opt/libclang-21/usr/lib/clang/21";
 fi
 
 make --directory="/presto_native_staging/presto" cmake-and-build BUILD_TYPE=${BUILD_TYPE} BUILD_DIR="" BUILD_BASE_DIR=${BUILD_BASE_DIR};

@@ -129,6 +129,15 @@ ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/cugeo-build/spatial-cuda" \
 
 WORKDIR /workspace/velox
 
+# cuGeo's ABI generator loads libclang 21, which the dependency image unpacks
+# beside the system's newer clang, with its resource headers. These are image
+# variables, so a later cuGeo build in the image (its tests, for one) finds it.
+ENV LIBCLANG_PATH=/opt/libclang-21/usr/lib64/libclang.so.21.1 \
+    BINDGEN_EXTRA_CLANG_ARGS="-resource-dir=/opt/libclang-21/usr/lib/clang/21"
+
+# cuGeo's layer check (one of its tests) reads Markdown tables.
+RUN if [ "$WITH_CUGEO" = "ON" ]; then python3 -m pip install --no-cache-dir markdown-it-py; fi
+
 # Print environment variables for debugging
 RUN printenv | sort
 
