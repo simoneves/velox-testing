@@ -10,8 +10,9 @@
 # fail. The script starts the GPU cluster (replacing any running Presto),
 # registers the tables in schema hive.cugeo_end_to_end, writes the properties into
 # the file metastore, runs the queries, and stops the cluster. It exits 0 when
-# every query returns the fixture's rows through cuGeo's operators and every
-# failure fails with its message.
+# every query returns the fixture's rows, through the cuGeo operator the fixture
+# names or, where it names none, without cuGeo, and every failure fails with its
+# message.
 #
 # Needs PRESTO_DATA_DIR, the cuGeo clone (CUGEO_DIR, default ../cugeo beside this
 # repository) with uv, and the Presto CLI jar from the Presto Java build.
@@ -107,8 +108,6 @@ def operators(output):
 def value(text, kind):
     return None if text == "" else {"bigint": int, "double": float, "varchar": str}[kind](text)
 
-expected_operator = {"join": "CuGeoSpatialProbe", "within": "CuGeoSpatialProbe", "group": "CuGeoSpatialProbe",
-                     "area": "CuGeoSpatialFunction"}
 failed = 0
 for name, query in fixture["queries"].items():
     output = run(query["presto"])
@@ -116,7 +115,13 @@ for name, query in fixture["queries"].items():
     rows = sorted(([value(v, k) for v, k in zip(row, query["types"])] for row in csv.reader(io.StringIO("\n".join(lines)))),
                   key=json.dumps)
     ran = operators(output)
-    ok = rows == query["rows"] and expected_operator.get(name, "") in ran
+    # The fixture names the cuGeo operator that must run the query, or null where
+    # the worker must run it without cuGeo.
+    if query["operator"]:
+        lowered = query["operator"] in ran
+    else:
+        lowered = not any(operator.startswith("CuGeo") for operator in ran)
+    ok = rows == query["rows"] and lowered
     failed += not ok
     print(f"{'PASS' if ok else 'FAIL'} {name}: {len(rows)} rows" + ("" if ok else f"\n  got {rows}\n  expected {query['rows']}\n  operators {sorted(ran)}"))
 for name, failure in fixture["failures"].items():
