@@ -106,7 +106,11 @@ def operators(output):
     return {o["operatorType"] for o in json.loads(info)["queryStats"]["operatorSummaries"]}
 
 def value(text, kind):
-    return None if text == "" else {"bigint": int, "double": float, "varchar": str}[kind](text)
+    if text == "":
+        return None
+    if kind == "boolean":
+        return {"true": True, "false": False}[text]
+    return {"bigint": int, "double": float, "varchar": str}[kind](text)
 
 failed = 0
 for name, query in fixture["queries"].items():
