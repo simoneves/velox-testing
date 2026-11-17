@@ -48,8 +48,13 @@ for table in ${TABLES}; do
     parts=$(python3 -c "import math; print(max(1, math.ceil(${SCALE})))")
   fi
   start=$(date +%s)
-  # With -p, spatialbench-cli writes <table>/<table>.<part>.parquet under -o.
+  # With -p, spatialbench-cli writes <table>/<table>.<part>.parquet under -o,
+  # except the zone table in one part, which it writes as <table>.parquet.
   "${CLI}" -s "${SCALE}" -T "${table}" -p "${parts}" -o "${OUT}"
+  if [[ -f "${OUT}/${table}.parquet" ]]; then
+    mkdir -p "${OUT}/${table}"
+    mv "${OUT}/${table}.parquet" "${OUT}/${table}/${table}.1.parquet"
+  fi
   echo "${table}: $(ls "${OUT}/${table}" | wc -l) files, $(du -sh "${OUT}/${table}" | cut -f1), $(( $(date +%s) - start ))s"
 done
 echo "Wrote ${OUT}"
