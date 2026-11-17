@@ -29,6 +29,7 @@ presto/docker/config/generated*/
 # Generated Presto Docker Compose files
 presto/docker/docker-compose/generated*/
 presto/scripts/presto_logs/
+presto/scripts/cugeo_comparison_results/
 spark_gluten/scripts/spark_logs/
 spark_gluten/scripts/.temp-spark-connect.conf
 

@@ -1,0 +1,13 @@
+{
+ "trip": {
+  "columns": [["t_tripkey", "bigint"], ["t_custkey", "bigint"], ["t_driverkey", "bigint"], ["t_vehiclekey", "bigint"],
+              ["t_pickuptime", "timestamp"], ["t_dropofftime", "timestamp"], ["t_fare", "decimal(15,5)"],
+              ["t_tip", "decimal(15,5)"], ["t_totalamount", "decimal(15,5)"], ["t_distance", "decimal(15,5)"],
+              ["t_pickuploc", "varbinary"], ["t_dropoffloc", "varbinary"]],
+  "properties": {"cugeo.geometry.t_pickuploc": "point", "cugeo.geometry.t_dropoffloc": "point"}
+ },
+ "building": {
+  "columns": [["b_buildingkey", "bigint"], ["b_name", "varchar"], ["b_boundary", "varbinary"]],
+  "properties": {"cugeo.geometry.b_boundary": "polygon"}
+ }
+}
