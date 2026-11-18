@@ -7,9 +7,10 @@
 # (run_cugeo_comparison.sh), with Apache Sedona SpatialBench's spatialbench-cli,
 # into ${PRESTO_DATA_DIR}/spatialbench/v<generator version>/sf<N>/<table>/, one
 # directory per table, where the Presto containers can read it. The trip table
-# is written as one file per 6M rows.
+# is written as one file per 6M rows, -j files at a time (default 8): one
+# spatialbench-cli process keeps only about three cores busy.
 #
-#   generate_spatialbench_data.sh -s 10 [-t "trip building"]
+#   generate_spatialbench_data.sh -s 10 [-t "trip building"] [-j 8]
 #
 # Needs PRESTO_DATA_DIR and a SpatialBench clone (SEDONA_SPATIALBENCH, default
 # ../sedona-spatialbench beside the velox-geo tree); builds spatialbench-cli
@@ -19,14 +20,16 @@ set -euo pipefail
 
 SCALE=""
 TABLES="trip building customer driver vehicle zone"
-while getopts "s:t:" option; do
+JOBS=8
+while getopts "s:t:j:" option; do
   case "${option}" in
     s) SCALE="${OPTARG}" ;;
     t) TABLES="${OPTARG}" ;;
-    *) echo "usage: $0 -s <scale factor> [-t \"<tables>\"]" >&2; exit 1 ;;
+    j) JOBS="${OPTARG}" ;;
+    *) echo "usage: $0 -s <scale factor> [-t \"<tables>\"] [-j jobs]" >&2; exit 1 ;;
   esac
 done
-[[ -n "${SCALE}" ]] || { echo "usage: $0 -s <scale factor> [-t \"<tables>\"]" >&2; exit 1; }
+[[ -n "${SCALE}" ]] || { echo "usage: $0 -s <scale factor> [-t \"<tables>\"] [-j jobs]" >&2; exit 1; }
 : "${PRESTO_DATA_DIR:?PRESTO_DATA_DIR must be set}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,7 +53,11 @@ for table in ${TABLES}; do
   start=$(date +%s)
   # With -p, spatialbench-cli writes <table>/<table>.<part>.parquet under -o,
   # except the zone table in one part, which it writes as <table>.parquet.
-  "${CLI}" -s "${SCALE}" -T "${table}" -p "${parts}" -o "${OUT}"
+  if (( parts > 1 )); then
+    seq 1 "${parts}" | xargs -P "${JOBS}" -I{} "${CLI}" -s "${SCALE}" -T "${table}" -p "${parts}" --part {} -o "${OUT}"
+  else
+    "${CLI}" -s "${SCALE}" -T "${table}" -p "${parts}" -o "${OUT}"
+  fi
   if [[ -f "${OUT}/${table}.parquet" ]]; then
     mkdir -p "${OUT}/${table}"
     mv "${OUT}/${table}.parquet" "${OUT}/${table}/${table}.1.parquet"
