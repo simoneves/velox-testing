@@ -12,7 +12,8 @@
 # the file metastore, runs the queries, and stops the cluster. It exits 0 when
 # every query returns the fixture's rows, through the cuGeo operator the fixture
 # names or, where it names none, without cuGeo, and every failure fails with its
-# message.
+# message. Rows match exactly, except a column the fixture gives a band: there
+# each row's value may differ from the fixture's by that row's width.
 #
 # Needs PRESTO_DATA_DIR, the cuGeo clone (CUGEO_DIR, default ../cugeo beside this
 # repository) with uv, and the Presto CLI jar from the Presto Java build.
@@ -112,6 +113,25 @@ def value(text, kind):
         return {"true": True, "false": False}[text]
     return {"bigint": int, "double": float, "varchar": str}[kind](text)
 
+def matches(rows, query):
+    """Whether 'rows' are the fixture's: exactly, except within the band's widths."""
+    band = query.get("band")
+    if not band:
+        return rows == query["rows"]
+    column = band["column"]
+    key = lambda row: json.dumps(row[:column] + row[column + 1:])
+    got = sorted(rows, key=key)
+    want = sorted(zip(query["rows"], band["widths"]), key=lambda pair: key(pair[0]))
+    if len(got) != len(want):
+        return False
+    for row, (expected, width) in zip(got, want):
+        if key(row) != key(expected):
+            return False
+        a, b = row[column], expected[column]
+        if (a is None) != (b is None) or (a is not None and not abs(a - b) <= width):
+            return False
+    return True
+
 failed = 0
 for name, query in fixture["queries"].items():
     output = run(query["presto"])
@@ -125,7 +145,7 @@ for name, query in fixture["queries"].items():
         lowered = query["operator"] in ran
     else:
         lowered = not any(operator.startswith("CuGeo") for operator in ran)
-    ok = rows == query["rows"] and lowered
+    ok = matches(rows, query) and lowered
     failed += not ok
     print(f"{'PASS' if ok else 'FAIL'} {name}: {len(rows)} rows" + ("" if ok else f"\n  got {rows}\n  expected {query['rows']}\n  operators {sorted(ran)}"))
 for name, failure in fixture["failures"].items():
