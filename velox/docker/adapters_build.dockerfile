@@ -106,7 +106,7 @@ ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/rmm-build:\
 ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/rapids_logger-build:\
 ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/kvikio-build:\
 ${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/nvcomp_proprietary_binary-src/lib64:\
-${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/cugeo-build/spatial-cuda" \
+${BUILD_BASE_DIR}/${BUILD_TYPE}/_deps/cugeo-build/cuda" \
     ENABLE_SCCACHE="${ENABLE_SCCACHE}" \
     SCCACHE_VERSION="${SCCACHE_VERSION}" \
     SCCACHE_SERVER_LOG="${SCCACHE_SERVER_LOG}" \

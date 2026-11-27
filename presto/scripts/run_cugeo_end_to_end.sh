@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Runs cuGeo's Presto end-to-end check on the native GPU worker built with
-# --with-cugeo. cuGeo's backends/cugeo-presto/tools/presto-end-to-end.py writes
+# --with-cugeo. cuGeo's backends/presto/tools/presto-end-to-end.py writes
 # the dataset, and its tests/fixtures/presto-end-to-end.json holds the tables'
 # properties, the queries, the PostGIS reference's rows and the queries that must
 # fail. The script starts the GPU cluster (replacing any running Presto),
@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
 CUGEO_DIR="${CUGEO_DIR:-${REPO_ROOT}/../cugeo}"
 SCHEMA=cugeo_end_to_end
-COMPONENT="${CUGEO_DIR}/cugeo-geometry/backends/cugeo-presto"
+COMPONENT="${CUGEO_DIR}/cugeo-geometry/backends/presto"
 FIXTURE="${COMPONENT}/tests/fixtures/presto-end-to-end.json"
 CLI_JAR="${REPO_ROOT}/../presto/docker/presto-cli-testing-executable.jar"
 METASTORE="${SCRIPT_DIR}/../docker/.hive_metastore"

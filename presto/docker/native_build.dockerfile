@@ -141,9 +141,9 @@ mkdir -p /runtime-plugin;
 if [ "$WITH_CUGEO" = "ON" ]; then
   git -C ${BUILD_BASE_DIR}/_deps/cugeo-src rev-parse HEAD;
   CUGEO_BUILD=${BUILD_BASE_DIR}/_deps/cugeo-build;
-  ls -l ${CUGEO_BUILD}/libcugeo_velox_gpu.a ${CUGEO_BUILD}/spatial-cuda/libspatial_cuda.so ${CUGEO_BUILD}/cugeo-presto/libcugeo_presto.so;
-  cp ${CUGEO_BUILD}/spatial-cuda/libspatial_cuda.so /runtime-libraries;
-  cp ${CUGEO_BUILD}/cugeo-presto/libcugeo_presto.so /runtime-plugin;
+  ls -l ${CUGEO_BUILD}/libcugeo_geometry_velox_gpu.a ${CUGEO_BUILD}/cuda/libcugeo_geometry_cuda.so ${CUGEO_BUILD}/presto/libcugeo_geometry_presto.so;
+  cp ${CUGEO_BUILD}/cuda/libcugeo_geometry_cuda.so /runtime-libraries;
+  cp ${CUGEO_BUILD}/presto/libcugeo_geometry_presto.so /runtime-plugin;
 fi
 EOF
 
@@ -154,7 +154,7 @@ RUN mkdir /usr/lib64/presto-native-libs && \
 
 # The worker's default plugin directory is "plugin" under its working
 # directory, "/". It loads every shared library there as a plugin, so only
-# plugins go in it (--with-cugeo: libcugeo_presto.so).
+# plugins go in it (--with-cugeo: libcugeo_geometry_presto.so).
 RUN if [ -n "$(ls -A /runtime-plugin)" ]; then mkdir -p /plugin && cp /runtime-plugin/* /plugin/; fi
 
 COPY velox-testing/presto/docker/launch_presto_servers.sh velox-testing/presto/docker/presto_profiling_wrapper.sh /opt
